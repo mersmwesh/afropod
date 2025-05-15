@@ -1,40 +1,36 @@
 import React, { useState } from 'react';
-import { View, StyleSheet, ScrollView, Image, TouchableOpacity, Platform } from 'react-native';
+import { View, StyleSheet, ScrollView, TouchableOpacity, Platform } from 'react-native';
+import { useRouter } from 'expo-router';
 import { Typography } from '@/components/ui/Typography';
 import { Card } from '@/components/ui/Card';
 import { Download, BookOpen, Heart, Settings, ChevronRight } from 'lucide-react-native';
 import Colors from '@/constants/Colors';
 import Layout from '@/constants/Layout';
-import { LANGUAGES, REGIONS, CATEGORIES, DEFAULT_USER_PREFERENCES, PODCASTS } from '@/data/mockData';
+import { LANGUAGES, REGIONS, CATEGORIES, PODCASTS } from '@/data/mockData';
 import PodcastCard from '@/components/podcast/PodcastCard';
 import MiniPlayer from '@/components/player/MiniPlayer';
+import { PreferenceSelector } from '@/components/profile/PreferenceSelector';
 import useMockPlayer from '@/hooks/useMockPlayer';
+import { useUserProfile } from '@/hooks/useUserProfile';
 
 export default function ProfileScreen() {
   const [activeTab, setActiveTab] = useState<'subscriptions' | 'downloads' | 'favorites'>('subscriptions');
+  const [isEditingPreferences, setIsEditingPreferences] = useState(false);
   const player = useMockPlayer();
+  const router = useRouter();
+  const { user, updatePreferences } = useUserProfile();
 
-  // Mock user data
-  const user = {
-    name: 'John Doe',
-    email: 'john.doe@example.com',
-    preferences: DEFAULT_USER_PREFERENCES,
-  };
+  // Get subscribed podcasts
+  const subscribedPodcasts = PODCASTS.filter(podcast => 
+    user.subscribedPodcasts.includes(podcast.id)
+  );
 
-  // Get language, region, and genre names from preferences
-  const getPreferenceNames = (type: 'languages' | 'regions' | 'genres') => {
-    const preferenceIds = user.preferences[type];
-    
-    const sourceData = type === 'languages' 
-      ? LANGUAGES 
-      : type === 'regions' 
-        ? REGIONS 
-        : CATEGORIES;
-    
-    return preferenceIds
-      .map(id => sourceData.find(item => item.id === id)?.name)
-      .filter(Boolean)
-      .join(', ');
+  // Handle preference updates
+  const handlePreferenceUpdate = (
+    type: 'languages' | 'regions' | 'genres',
+    values: string[]
+  ) => {
+    updatePreferences(type, values);
   };
 
   return (
@@ -56,48 +52,94 @@ export default function ProfileScreen() {
             </View>
           </View>
           
-          <TouchableOpacity style={styles.settingsButton}>
+          <TouchableOpacity 
+            style={styles.settingsButton}
+            onPress={() => router.push('/settings')}
+          >
             <Settings size={24} color={Colors.neutral[700]} />
           </TouchableOpacity>
         </View>
 
         {/* Preferences */}
-        <Card variant="elevated" style={styles.preferencesCard}>
-          <Typography variant="h3" style={styles.cardTitle}>
-            Your Preferences
-          </Typography>
-          
-          <View style={styles.preference}>
-            <Typography variant="bodyMedium">Languages</Typography>
-            <Typography variant="body" color={Colors.neutral[600]}>
-              {getPreferenceNames('languages')}
-            </Typography>
-          </View>
-          
-          <View style={styles.preference}>
-            <Typography variant="bodyMedium">Regions</Typography>
-            <Typography variant="body" color={Colors.neutral[600]}>
-              {getPreferenceNames('regions')}
-            </Typography>
-          </View>
-          
-          <View style={styles.preference}>
-            <Typography variant="bodyMedium">Genres</Typography>
-            <Typography variant="body" color={Colors.neutral[600]}>
-              {getPreferenceNames('genres')}
-            </Typography>
-          </View>
-          
-          <TouchableOpacity style={styles.editButton}>
-            <Typography 
-              variant="bodyMedium" 
-              color={Colors.primary[500]}
+        {isEditingPreferences ? (
+          <View style={styles.preferencesContainer}>
+            <PreferenceSelector
+              title="Languages"
+              items={LANGUAGES}
+              selectedIds={user.preferences.languages}
+              onSelect={(ids) => handlePreferenceUpdate('languages', ids)}
+            />
+            
+            <PreferenceSelector
+              title="Regions"
+              items={REGIONS}
+              selectedIds={user.preferences.regions}
+              onSelect={(ids) => handlePreferenceUpdate('regions', ids)}
+            />
+            
+            <PreferenceSelector
+              title="Genres"
+              items={CATEGORIES}
+              selectedIds={user.preferences.genres}
+              onSelect={(ids) => handlePreferenceUpdate('genres', ids)}
+            />
+            
+            <TouchableOpacity
+              style={styles.doneButton}
+              onPress={() => setIsEditingPreferences(false)}
             >
-              Edit Preferences
+              <Typography variant="bodyMedium" color={Colors.primary[500]}>
+                Done
+              </Typography>
+            </TouchableOpacity>
+          </View>
+        ) : (
+          <Card variant="elevated" style={styles.preferencesCard}>
+            <Typography variant="h3" style={styles.cardTitle}>
+              Your Preferences
             </Typography>
-            <ChevronRight size={16} color={Colors.primary[500]} style={styles.chevron} />
-          </TouchableOpacity>
-        </Card>
+            
+            <View style={styles.preference}>
+              <Typography variant="bodyMedium">Languages</Typography>
+              <Typography variant="body" color={Colors.neutral[600]}>
+                {LANGUAGES.filter(lang => 
+                  user.preferences.languages.includes(lang.id)
+                ).map(lang => lang.name).join(', ')}
+              </Typography>
+            </View>
+            
+            <View style={styles.preference}>
+              <Typography variant="bodyMedium">Regions</Typography>
+              <Typography variant="body" color={Colors.neutral[600]}>
+                {REGIONS.filter(region => 
+                  user.preferences.regions.includes(region.id)
+                ).map(region => region.name).join(', ')}
+              </Typography>
+            </View>
+            
+            <View style={styles.preference}>
+              <Typography variant="bodyMedium">Genres</Typography>
+              <Typography variant="body" color={Colors.neutral[600]}>
+                {CATEGORIES.filter(category => 
+                  user.preferences.genres.includes(category.id)
+                ).map(category => category.name).join(', ')}
+              </Typography>
+            </View>
+            
+            <TouchableOpacity 
+              style={styles.editButton}
+              onPress={() => setIsEditingPreferences(true)}
+            >
+              <Typography 
+                variant="bodyMedium" 
+                color={Colors.primary[500]}
+              >
+                Edit Preferences
+              </Typography>
+              <ChevronRight size={16} color={Colors.primary[500]} style={styles.chevron} />
+            </TouchableOpacity>
+          </Card>
+        )}
 
         {/* Content Tabs */}
         <Card variant="elevated" padding="none" style={styles.tabsCard}>
@@ -195,9 +237,24 @@ export default function ProfileScreen() {
               <Typography variant="h3" style={styles.contentTitle}>
                 Subscribed Podcasts
               </Typography>
-              {PODCASTS.slice(0, 3).map((podcast) => (
-                <PodcastCard key={podcast.id} podcast={podcast} />
-              ))}
+              {subscribedPodcasts.length > 0 ? (
+                subscribedPodcasts.map((podcast) => (
+                  <PodcastCard key={podcast.id} podcast={podcast} />
+                ))
+              ) : (
+                <Card variant="elevated" style={styles.emptyState}>
+                  <Typography variant="h4" style={styles.emptyStateTitle}>
+                    No subscriptions yet
+                  </Typography>
+                  <Typography
+                    variant="body"
+                    color={Colors.neutral[600]}
+                    style={styles.emptyStateText}
+                  >
+                    Subscribe to podcasts to see them here and get notified about new episodes.
+                  </Typography>
+                </Card>
+              )}
             </>
           )}
           
@@ -206,11 +263,7 @@ export default function ProfileScreen() {
               <Typography variant="h3" style={styles.contentTitle}>
                 Downloaded Episodes
               </Typography>
-              <View style={styles.emptyState}>
-                <Image
-                  source={{ uri: 'https://images.pexels.com/photos/7647973/pexels-photo-7647973.jpeg' }}
-                  style={styles.emptyStateImage}
-                />
+              <Card variant="elevated" style={styles.emptyState}>
                 <Typography variant="h4" style={styles.emptyStateTitle}>
                   No downloads yet
                 </Typography>
@@ -221,7 +274,7 @@ export default function ProfileScreen() {
                 >
                   Download episodes to listen offline. They'll appear here.
                 </Typography>
-              </View>
+              </Card>
             </>
           )}
           
@@ -230,11 +283,7 @@ export default function ProfileScreen() {
               <Typography variant="h3" style={styles.contentTitle}>
                 Favorite Episodes
               </Typography>
-              <View style={styles.emptyState}>
-                <Image
-                  source={{ uri: 'https://images.pexels.com/photos/7648472/pexels-photo-7648472.jpeg' }}
-                  style={styles.emptyStateImage}
-                />
+              <Card variant="elevated" style={styles.emptyState}>
                 <Typography variant="h4" style={styles.emptyStateTitle}>
                   No favorites yet
                 </Typography>
@@ -245,7 +294,7 @@ export default function ProfileScreen() {
                 >
                   Heart the episodes you love and they'll be saved here.
                 </Typography>
-              </View>
+              </Card>
             </>
           )}
         </View>
@@ -311,6 +360,9 @@ const styles = StyleSheet.create({
       },
     }),
   },
+  preferencesContainer: {
+    padding: Layout.spacing.m,
+  },
   preferencesCard: {
     margin: Layout.spacing.m,
   },
@@ -325,6 +377,15 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     alignSelf: 'flex-start',
     marginTop: Layout.spacing.s,
+    ...Platform.select({
+      web: {
+        cursor: 'pointer',
+      },
+    }),
+  },
+  doneButton: {
+    alignSelf: 'flex-end',
+    padding: Layout.spacing.s,
     ...Platform.select({
       web: {
         cursor: 'pointer',
@@ -370,12 +431,6 @@ const styles = StyleSheet.create({
   emptyState: {
     alignItems: 'center',
     padding: Layout.spacing.xl,
-  },
-  emptyStateImage: {
-    width: 150,
-    height: 150,
-    borderRadius: 75,
-    marginBottom: Layout.spacing.l,
   },
   emptyStateTitle: {
     marginBottom: Layout.spacing.s,

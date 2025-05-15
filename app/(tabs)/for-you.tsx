@@ -1,13 +1,23 @@
-import React, { useState } from 'react';
-import { View, StyleSheet, ScrollView, ImageBackground, SafeAreaView, Platform, FlatList, TouchableOpacity } from 'react-native';
+import React, { useState, useCallback } from 'react';
+import { View, StyleSheet, ScrollView, ImageBackground, SafeAreaView, Platform, FlatList, TouchableOpacity, Dimensions } from 'react-native';
 import { Typography } from '@/components/ui/Typography';
 import { Card } from '@/components/ui/Card';
-import { Play, SkipForward } from 'lucide-react-native';
+import { Play, SkipForward, Heart, Share2, Clock, Bookmark, ThumbsUp, ThumbsDown } from 'lucide-react-native';
 import Colors from '@/constants/Colors';
 import Layout from '@/constants/Layout';
 import { EPISODES } from '@/data/mockData';
 import useMockPlayer from '@/hooks/useMockPlayer';
 import MiniPlayer from '@/components/player/MiniPlayer';
+import Animated, { 
+  useAnimatedStyle, 
+  withSpring,
+  interpolate,
+  useSharedValue,
+  withSequence,
+  withTiming 
+} from 'react-native-reanimated';
+
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 // Short audio clip type for the "For You" feed
 interface AudioClip {
@@ -18,38 +28,57 @@ interface AudioClip {
   imageUrl: string;
   audioUrl: string;
   episode: typeof EPISODES[0];
+  topics: string[];
+  transcript: string;
+  highlights: {
+    startTime: number;
+    endTime: number;
+    text: string;
+  }[];
 }
 
-// Generate mock clips from episodes
+// Generate mock clips from episodes with enhanced data
 const generateMockClips = (): AudioClip[] => {
   return EPISODES.flatMap(episode => {
-    // Create 2-3 clips per episode
     const clips = [];
-    const clipCount = Math.floor(Math.random() * 2) + 2; // 2-3 clips
+    const clipCount = Math.floor(Math.random() * 2) + 2;
     
     for (let i = 0; i < clipCount; i++) {
       clips.push({
         id: `${episode.id}-clip-${i+1}`,
         title: `${episode.title} - Highlight ${i+1}`,
         podcastTitle: episode.podcastTitle,
-        duration: Math.floor(Math.random() * 60) + 30, // 30-90 seconds
+        duration: Math.floor(Math.random() * 60) + 30,
         imageUrl: episode.imageUrl,
         audioUrl: episode.audioUrl,
         episode: episode,
+        topics: ['Technology', 'Innovation', 'Africa'].sort(() => Math.random() - 0.5).slice(0, 2),
+        transcript: "This is a sample transcript of the highlighted moment...",
+        highlights: [
+          {
+            startTime: 30,
+            endTime: 45,
+            text: "Key moment from the episode..."
+          }
+        ]
       });
     }
     
     return clips;
-  }).sort(() => Math.random() - 0.5); // Shuffle clips
+  }).sort(() => Math.random() - 0.5);
 };
 
 const AUDIO_CLIPS = generateMockClips();
 
 export default function ForYouScreen() {
   const [currentClipIndex, setCurrentClipIndex] = useState(0);
+  const [likedClips, setLikedClips] = useState<Set<string>>(new Set());
+  const [savedClips, setSavedClips] = useState<Set<string>>(new Set());
   const player = useMockPlayer();
   
   const currentClip = AUDIO_CLIPS[currentClipIndex];
+  const likeScale = useSharedValue(1);
+  const saveScale = useSharedValue(1);
   
   // Play the current clip's full episode
   const playFullEpisode = () => {
@@ -58,12 +87,56 @@ export default function ForYouScreen() {
     }
   };
   
-  // Play next clip
+  // Play next clip with animation
   const playNextClip = () => {
     setCurrentClipIndex((prev) => 
       prev < AUDIO_CLIPS.length - 1 ? prev + 1 : 0
     );
   };
+
+  // Handle like animation and state
+  const handleLike = useCallback(() => {
+    const clipId = currentClip.id;
+    setLikedClips(prev => {
+      const newSet = new Set(prev);
+      if (prev.has(clipId)) {
+        newSet.delete(clipId);
+      } else {
+        newSet.add(clipId);
+        likeScale.value = withSequence(
+          withSpring(1.2),
+          withSpring(1)
+        );
+      }
+      return newSet;
+    });
+  }, [currentClip, likeScale]);
+
+  // Handle save animation and state
+  const handleSave = useCallback(() => {
+    const clipId = currentClip.id;
+    setSavedClips(prev => {
+      const newSet = new Set(prev);
+      if (prev.has(clipId)) {
+        newSet.delete(clipId);
+      } else {
+        newSet.add(clipId);
+        saveScale.value = withSequence(
+          withSpring(1.2),
+          withSpring(1)
+        );
+      }
+      return newSet;
+    });
+  }, [currentClip, saveScale]);
+
+  const likeAnimatedStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: likeScale.value }]
+  }));
+
+  const saveAnimatedStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: saveScale.value }]
+  }));
 
   // Render a clip item
   const renderClipItem = ({ item, index }: { item: AudioClip; index: number }) => (
@@ -115,9 +188,15 @@ export default function ForYouScreen() {
         <Card variant="elevated" style={styles.playerCard}>
           <View style={styles.playerHeader}>
             <Typography variant="h3">Now Playing</Typography>
-            <Typography variant="caption" color={Colors.neutral[500]}>
-              AI-selected clips for you
-            </Typography>
+            <View style={styles.topicsContainer}>
+              {currentClip.topics.map((topic, index) => (
+                <View key={index} style={styles.topicTag}>
+                  <Typography variant="caption" color={Colors.secondary[700]}>
+                    {topic}
+                  </Typography>
+                </View>
+              ))}
+            </View>
           </View>
           
           <View style={styles.currentClip}>
@@ -127,16 +206,36 @@ export default function ForYouScreen() {
               imageStyle={styles.clipImageStyle}
             >
               <View style={styles.clipControls}>
-                <TouchableOpacity 
-                  style={styles.playButton}
-                  onPress={playFullEpisode}
-                >
-                  <Play size={24} color={Colors.neutral[50]} />
-                  <Typography variant="bodyMedium" color={Colors.neutral[50]}>
-                    Full Episode
-                  </Typography>
-                </TouchableOpacity>
-                
+                <View style={styles.controlsRow}>
+                  <TouchableOpacity 
+                    style={styles.actionButton}
+                    onPress={() => {}}
+                  >
+                    <ThumbsDown size={24} color={Colors.neutral[50]} />
+                  </TouchableOpacity>
+
+                  <TouchableOpacity 
+                    style={styles.playButton}
+                    onPress={playFullEpisode}
+                  >
+                    <Play size={32} color={Colors.neutral[50]} />
+                  </TouchableOpacity>
+
+                  <TouchableOpacity 
+                    style={styles.actionButton}
+                    onPress={() => {}}
+                  >
+                    <ThumbsUp size={24} color={Colors.neutral[50]} />
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </ImageBackground>
+            
+            <View style={styles.clipDetails}>
+              <View style={styles.titleRow}>
+                <Typography variant="h4" style={styles.clipTitle}>
+                  {currentClip.title}
+                </Typography>
                 <TouchableOpacity 
                   style={styles.skipButton}
                   onPress={playNextClip}
@@ -144,13 +243,58 @@ export default function ForYouScreen() {
                   <SkipForward size={20} color={Colors.neutral[800]} />
                 </TouchableOpacity>
               </View>
-            </ImageBackground>
-            
-            <View style={styles.clipDetails}>
-              <Typography variant="h4">{currentClip.title}</Typography>
-              <Typography variant="bodyMedium" color={Colors.neutral[600]}>
+
+              <Typography variant="bodyMedium" color={Colors.neutral[600]} style={styles.podcastTitle}>
                 {currentClip.podcastTitle}
               </Typography>
+
+              <View style={styles.highlightContainer}>
+                <Typography variant="caption" color={Colors.neutral[500]} style={styles.transcriptLabel}>
+                  Transcript Highlight
+                </Typography>
+                <Typography variant="body" color={Colors.neutral[700]} style={styles.transcriptText}>
+                  {currentClip.highlights[0].text}
+                </Typography>
+              </View>
+
+              <View style={styles.actionsContainer}>
+                <Animated.View style={likeAnimatedStyle}>
+                  <TouchableOpacity 
+                    style={styles.actionButton}
+                    onPress={handleLike}
+                  >
+                    <Heart 
+                      size={24} 
+                      color={likedClips.has(currentClip.id) ? Colors.error[500] : Colors.neutral[600]}
+                      fill={likedClips.has(currentClip.id) ? Colors.error[500] : 'none'}
+                    />
+                  </TouchableOpacity>
+                </Animated.View>
+
+                <Animated.View style={saveAnimatedStyle}>
+                  <TouchableOpacity 
+                    style={styles.actionButton}
+                    onPress={handleSave}
+                  >
+                    <Bookmark 
+                      size={24} 
+                      color={savedClips.has(currentClip.id) ? Colors.primary[500] : Colors.neutral[600]}
+                      fill={savedClips.has(currentClip.id) ? Colors.primary[500] : 'none'}
+                    />
+                  </TouchableOpacity>
+                </Animated.View>
+
+                <TouchableOpacity style={styles.actionButton}>
+                  <Share2 size={24} color={Colors.neutral[600]} />
+                </TouchableOpacity>
+
+                <View style={styles.durationContainer}>
+                  <Clock size={16} color={Colors.neutral[500]} style={styles.durationIcon} />
+                  <Typography variant="caption" color={Colors.neutral[500]}>
+                    {Math.floor(currentClip.duration / 60)}:{(currentClip.duration % 60).toString().padStart(2, '0')}
+                  </Typography>
+                </View>
+              </View>
             </View>
           </View>
         </Card>
@@ -215,13 +359,24 @@ const styles = StyleSheet.create({
   playerHeader: {
     marginBottom: Layout.spacing.m,
   },
+  topicsContainer: {
+    flexDirection: 'row',
+    marginTop: Layout.spacing.s,
+  },
+  topicTag: {
+    backgroundColor: Colors.secondary[100],
+    paddingHorizontal: Layout.spacing.s,
+    paddingVertical: 4,
+    borderRadius: Layout.borderRadius.s,
+    marginRight: Layout.spacing.s,
+  },
   currentClip: {
     borderRadius: Layout.borderRadius.m,
     overflow: 'hidden',
     backgroundColor: Colors.neutral[100],
   },
   clipImage: {
-    height: 200,
+    height: 300,
     justifyContent: 'flex-end',
   },
   clipImageStyle: {
@@ -229,24 +384,79 @@ const styles = StyleSheet.create({
     borderTopRightRadius: Layout.borderRadius.m,
   },
   clipControls: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
     padding: Layout.spacing.m,
     backgroundColor: 'rgba(0,0,0,0.4)',
   },
-  playButton: {
+  controlsRow: {
     flexDirection: 'row',
+    justifyContent: 'space-around',
     alignItems: 'center',
+  },
+  playButton: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
     backgroundColor: Colors.primary[500],
-    paddingHorizontal: Layout.spacing.m,
-    paddingVertical: Layout.spacing.s,
-    borderRadius: Layout.borderRadius.m,
+    justifyContent: 'center',
+    alignItems: 'center',
     ...Platform.select({
       web: {
         cursor: 'pointer',
       },
     }),
+  },
+  actionButton: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    ...Platform.select({
+      web: {
+        cursor: 'pointer',
+      },
+    }),
+  },
+  clipDetails: {
+    padding: Layout.spacing.m,
+  },
+  titleRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+  },
+  clipTitle: {
+    flex: 1,
+    marginRight: Layout.spacing.m,
+  },
+  podcastTitle: {
+    marginBottom: Layout.spacing.m,
+  },
+  highlightContainer: {
+    backgroundColor: Colors.neutral[100],
+    padding: Layout.spacing.m,
+    borderRadius: Layout.borderRadius.m,
+    marginBottom: Layout.spacing.m,
+  },
+  transcriptLabel: {
+    marginBottom: Layout.spacing.xs,
+  },
+  transcriptText: {
+    fontStyle: 'italic',
+  },
+  actionsContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: Layout.spacing.m,
+  },
+  durationContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  durationIcon: {
+    marginRight: Layout.spacing.xs,
   },
   skipButton: {
     width: 40,
@@ -260,9 +470,6 @@ const styles = StyleSheet.create({
         cursor: 'pointer',
       },
     }),
-  },
-  clipDetails: {
-    padding: Layout.spacing.m,
   },
   upNextSection: {
     padding: Layout.spacing.m,
